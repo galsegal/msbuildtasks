@@ -1,65 +1,88 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Package">
+
   <PropertyGroup>
+    <ProjectName>PROJECT FOLDER NAME</ProjectName>
+    <BuildPlatform>Any CPU</BuildPlatform>
+    <Configuration>Release</Configuration>
+    <VersionFile>version.txt</VersionFile>
+    <Artifacts>$(MSBuildProjectDirectory)\Artifacts\</Artifacts>
+    <TestResultsPath>$(Artifacts)\TestResults.xml</TestResultsPath>
+    <ProjectPath>$(MSBuildProjectDirectory)\$(ProjectName)</ProjectPath>
     <MSBuildCommunityTasksPath>$(MSBuildProjectDirectory)\.build</MSBuildCommunityTasksPath>
   </PropertyGroup>
 
+  <ItemGroup>
+    <SolutionFile Include="$(MSBuildProjectDirectory)\**\*.sln"/>
+    <NUnitConsole Include="C:\Program Files (x86)\NUnit 2.6.2\bin" />
+  </ItemGroup>
+
   <Import Project="$(MSBuildCommunityTasksPath)\MSBuild.Community.Tasks.targets"/>
 
-  <!-- Version Number -->
-  <PropertyGroup Condition=" '$(BUILD_NUMBER)' == '' ">
-    <Version>1.0.0.0</Version>
-    <FileVersion>1.0.0.0</FileVersion>
-    <InformationalVersion>1.0.0.0</InformationalVersion>
-  </PropertyGroup>
+  <Target Name="Build">
+    <CallTarget Targets="Clean"/>
+    <CallTarget Targets="Compile"/>
+  </Target>
 
-  <PropertyGroup Condition=" '$(BUILD_NUMBER)' != '' ">
-    <!-- Build Server Number -->
-    <Version>1.0.0.0</Version>
-    <FileVersion>$(BUILD_NUMBER)</FileVersion>
-    <InformationalVersion>$(BUILD_NUMBER)</InformationalVersion>
-  </PropertyGroup>
+  <Target Name="Test">
+    <CallTarget Targets="Build"/>
+    <CallTarget Targets="GetTestDlls"/>
+    <CallTarget Targets="CreateArtifactsDirectory"/>
+    <CallTarget Targets="RunUnitTests"/>
+  </Target>
 
-  <PropertyGroup Condition=" '$(BuildConfiguration)' == '' ">
-    <BuildConfiguration>Release</BuildConfiguration>
-  </PropertyGroup>
+  <Target Name="Package">
+    <CallTarget Targets="Test"/>
+    <CallTarget Targets="Version"/>
+    <CallTarget Targets="ZipProjectFiles"/>
+  </Target>
 
   <Target Name="Clean">
-    <DeleteTree Directories="**\obj\**;**\bin\**" />
+    <RemoveDir Directories="$(Artifacts)" />
+  </Target>
+
+  <Target Name="Compile">
+    <MSBuild Projects="@(SolutionFile)"
+            Targets="Rebuild"
+            Properties="Configuration=$(Configuration);Platform=$(BuildPlatform)" />
   </Target>
 
   <Target Name="Version">
-    <Time>
-      <Output TaskParameter="Year" PropertyName="Year" />
-    </Time>
-
-    <Message Text="Version: $(Version)"/>
-
-    <Attrib Files="$(MSBuildProjectDirectory)\GlobalAssemblyInfo.cs" ReadOnly="False" />
-
-    <AssemblyInfo CodeLanguage="CS"
-                  OutputFile="$(MSBuildProjectDirectory)\GlobalAssemblyInfo.cs"
-                  GenerateClass="true"
-                  AssemblyCopyright="Copyright © $(Year). All rights reserved."
-                  AssemblyConfiguration="$(BuildConfiguration)"
-                  AssemblyVersion="$(Version)"
-                  AssemblyFileVersion="$(FileVersion)"
-                  AssemblyInformationalVersion="$(InformationalVersion)" />
+    <Version VersionFile="$(VersionFile)" RevisionType="Increment">
+      <Output TaskParameter="Major" PropertyName="Major" />
+      <Output TaskParameter="Minor" PropertyName="Minor" />
+      <Output TaskParameter="Build" PropertyName="Build" />
+      <Output TaskParameter="Revision" PropertyName="Revision" />
+    </Version>
+    <Message Text="Version: $(Major).$(Minor).$(Build).$(Revision)"/>
   </Target>
 
-  <!-- Projects to Build -->
-  <ItemGroup>
-    <ProjectFiles Include="$(MSBuildProjectDirectory)\**\*.sln">
-      <Properties>Configuration=$(BuildConfiguration)</Properties>
-    </ProjectFiles>
-  </ItemGroup>
-
-  <Target Name="Compile" DependsOnTargets="Clean;Version">
-    <MSBuild Projects="@(ProjectFiles)" />
+  <Target Name="GetTestDlls">
+    <CreateItem Include="$(MSBuildProjectDirectory)\**\*.Tests\bin\$(Configuration)\*.Tests.dll">
+      <Output TaskParameter="Include" ItemName="TestAssembly" />
+    </CreateItem>
   </Target>
 
-  <Target Name="Build">
-    <CallTarget Targets="Compile" />
+  <Target Name="RunUnitTests">
+    <NUnit ToolPath="@(NUnitConsole)"
+           DisableShadowCopy="true"
+           ContinueOnError="false"
+           Framework="4.5"
+           Assemblies="@(TestAssembly)"
+           OutputXmlFile="$(TestResultsPath)"/>
+  </Target>
+
+  <Target Name="CreateArtifactsDirectory" Condition="!Exists($(Artifacts))">
+    <MakeDir Directories="$(Artifacts)" />
+  </Target>
+
+  <Target Name="ZipProjectFiles">
+    <CreateItem Include="$(ProjectPath)\**\*.*"
+                Exclude="$(ProjectPath)\obj\**\*.*;$(ProjectPath)\Logs\**\*.*;$(ProjectPath)\**\*.csproj;$(ProjectPath)\**\*.csproj.user;$(ProjectPath)\**\*.cs;$(ProjectPath)\**\*.pdb;$(ProjectPath)\packages.config;$(ProjectPath)\readme.txt">
+      <Output TaskParameter="Include" ItemName="ProjectFiles" />
+    </CreateItem>
+    <Zip WorkingDirectory="$(ProjectPath)"
+         Files="@(ProjectFiles)"
+         ZipFileName="$(Artifacts)\$(ProjectName)-$(Major).$(Minor).$(Build).$(Revision).zip"/>
   </Target>
 
 </Project>
